@@ -1,0 +1,3 @@
+".\Objects\main.obj" 
+TO ".\Objects\BtTempHumidity" 
+PRINT(".\Listings\BtTempHumidity.m51")

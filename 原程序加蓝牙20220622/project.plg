@@ -1,0 +1,24 @@
+<html>
+<body>
+<pre>
+<h1>礦ision Build Log</h1>
+<h2>Project:</h2>
+G:\单片机定做\2018.11.15温湿度控制+报警\DHT11温湿度控制可仿真\覆铜板带控制设备给买家的资料\程序\project.uvproj
+Project File Date:  12/25/2016
+
+<h2>Output:</h2>
+compiling main.c...
+main.c(299): warning C280: 'i': unreferenced local variable
+main.c - 0 Error(s), 1 Warning(s).
+Build target 'Target 1'
+linking...
+Program Size: data=19.1 xdata=0 code=1373
+creating hex file from "project"...
+"project" - 0 Error(s), 0 Warning(s).
+Rebuild target 'Target 1'
+compiling main.c...
+main.c(299): warning C280: 'i': unreferenced local variable
+linking...
+Program Size: data=19.1 xdata=0 code=1373
+creating hex file from "project"...
+"project" - 0 Error(s), 1 Warning(s).

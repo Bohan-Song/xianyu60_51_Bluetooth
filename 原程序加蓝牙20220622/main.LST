@@ -1,0 +1,757 @@
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: D:\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include <reg52.h>          // 头文件包含
+   2          #include <intrins.h>
+   3          
+   4          #define uchar unsigned char // 以后unsigned char就可以用uchar代替
+   5          #define uint  unsigned int  // 以后unsigned int 就可以用uint 代替
+   6          /*******************************蓝牙用**********************************/
+   7          typedef unsigned char  U8;       /* defined for unsigned 8-bits integer variable           无符号8位整型变
+             -量  */
+   8          typedef unsigned int   U16;      /* defined for unsigned 16-bits integer variable           无符号16位整型
+             -变量 */
+   9          #define uchar unsigned char
+  10          #define uint unsigned int
+  11          //----------------IO口定义区--------------------//
+  12          sbit  P2_0  = P2^0 ;
+  13          
+  14          //----------------定义区--------------------//
+  15          U8  U8temp;
+  16          U8  humidity_H,humidity_L,temperature_H,temperature_L,checkdata;
+  17          U8  str[5]= {"RS232"};
+  18          
+  19          /*******************************蓝牙用**********************************/
+  20          sfr ISP_DATA  = 0xe2;     // 数据寄存器
+  21          sfr ISP_ADDRH = 0xe3;     // 地址寄存器高八位
+  22          sfr ISP_ADDRL = 0xe4;     // 地址寄存器低八位
+  23          sfr ISP_CMD   = 0xe5;     // 命令寄存器
+  24          sfr ISP_TRIG  = 0xe6;     // 命令触发寄存器
+  25          sfr ISP_CONTR = 0xe7;     // 命令寄存器
+  26          
+  27          sbit Buzzer_P  = P1^6;    // 蜂鸣器
+  28          sbit DHT11_P   = P1^7;    // 温湿度传感器DHT11数据接入
+  29          sbit LcdRs_P   = P2^5;    // 1602液晶的RS管脚       
+  30          sbit LcdRw_P   = P2^6;    // 1602液晶的RW管脚 
+  31          sbit LcdEn_P   = P2^7;    // 1602液晶的EN管脚
+  32          sbit KeySet_P  = P3^2;    // “设置”按键的管脚
+  33          sbit KeyDown_P = P3^4;    // “减”按键的管脚
+  34          sbit KeyUp_P   = P3^3;    // “加”按键的管脚 
+  35          sbit LedHL_P   = P1^0;    // 湿度过低
+  36          sbit LedHH_P   = P1^1;    // 湿度过高
+  37          sbit LedTL_P   = P1^2;    // 温度过低
+  38          sbit LedTH_P   = P1^3;    // 温度过高
+  39          
+  40          uchar temp;         // 保存温度
+  41          uchar humi;         // 保存湿度
+  42          
+  43          uchar AlarmTL;      // 温度下限报警值
+  44          uchar AlarmTH;      // 温度上限报警值
+  45          uchar AlarmHL;      // 湿度下限报警值
+  46          uchar AlarmHH;      // 湿度上限报警值
+  47          
+  48          
+  49          /*******************************蓝牙用**********************************/
+  50          
+  51          
+  52          void Ble_Delay(U16 j)
+  53          {   U8 i;
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 2   
+
+  54   1          for(; j>0; j--)
+  55   1          {
+  56   2              for(i=0; i<27; i++);
+  57   2          }
+  58   1      }
+  59          
+  60          /**
+  61          *串口发送一个字节
+  62          */
+  63          void sendOneChar(uchar a)
+  64          {
+  65   1          SBUF = a;
+  66   1          while(TI==0);
+  67   1          TI=0;
+  68   1      }
+  69          
+  70          
+  71          /**
+  72          *延时函数：单位 ms
+  73          */
+  74          void Ble_delayms(uint x)
+  75          {
+  76   1          uint i,j;
+  77   1          for(i=x; i>0; i--)
+  78   1              for(j=110; j>0; j--);
+  79   1      }
+  80          /**
+  81          *延时函数： 延时10us
+  82          */
+  83          void  Ble_Delay_10us(void)
+  84          {
+  85   1          U8 i;
+  86   1          i--;
+  87   1          i--;
+  88   1          i--;
+  89   1          i--;
+  90   1          i--;
+  91   1          i--;
+  92   1      }
+  93          
+  94          /**
+  95          *延时函数： 延时10us
+  96          */
+  97          void Ble_delay13us()
+  98          {
+  99   1        U8 i;
+ 100   1        i--;
+ 101   1        i--;
+ 102   1        i--;
+ 103   1        i--;
+ 104   1        i--;
+ 105   1        i--;
+ 106   1        i--;
+ 107   1        i--;
+ 108   1      }
+ 109          /**
+ 110          *根据时序计算温湿度值
+ 111          */
+ 112          U8 computeData()
+ 113          {
+ 114   1          U8 i,U8comdata;
+ 115   1          for(i=0; i<8; i++)
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 3   
+
+ 116   1          {
+ 117   2              while(P2_0==0);       //等待54us低电平
+ 118   2              Ble_Delay_10us();         //延时30us确认高电平是否结束
+ 119   2              Ble_Delay_10us();
+ 120   2              Ble_Delay_10us();
+ 121   2              U8temp=0;
+ 122   2              if(P2_0==1)           //如果高电平高过预定0高电平
+ 123   2              {                     //值则数据位为 1
+ 124   3                  U8temp=1;
+ 125   3              }
+ 126   2              while(P2_0==1);     //等待高电平结束
+ 127   2              U8comdata<<=1;
+ 128   2              U8comdata|=U8temp;
+ 129   2          }
+ 130   1          return U8comdata;
+ 131   1      }
+ 132          
+ 133          //--------------------------------
+ 134          //-----湿度读取子程序 ------------
+ 135          //--------------------------------
+ 136          //----以下变量均为全局变量--------
+ 137          //----温度高8位== temperature_H------
+ 138          //----温度低8位== temperature_L------
+ 139          //----湿度高8位== humidity_H-----
+ 140          //----湿度低8位== humidity_L-----
+ 141          //----校验 8位 == checkdata-----
+ 142          //--------------------------------
+ 143          void readData()
+ 144          {
+ 145   1          U8  humidity_H_temp,humidity_L_temp,temperature_H_temp,temperature_L_temp,checkdata_temp;
+ 146   1          //主机拉低不少于18ms
+ 147   1          P2_0=0;
+ 148   1          Ble_delayms(20);
+ 149   1          //总线由上拉电阻拉高 主机延时13us最多20us 等待DHT11低电平响应
+ 150   1          P2_0=1;
+ 151   1          Ble_delay13us();
+ 152   1          //判断从机是否有低电平响应信号
+ 153   1          if(P2_0==0)
+ 154   1          {
+ 155   2              while(P2_0==0);       //判断DHT11发出 83us 的低电平响应信号是否结束
+ 156   2              while(P2_0==1);       //判断DHT11发出 87us 的高电平是否结束
+ 157   2              //数据接收状态
+ 158   2              humidity_H_temp = computeData();
+ 159   2              humidity_L_temp = computeData();
+ 160   2              temperature_H_temp = computeData();
+ 161   2              temperature_L_temp = computeData();
+ 162   2              checkdata_temp = computeData();
+ 163   2              P2_0 = 1;   //data拉高释放总线
+ 164   2              //数据校验
+ 165   2              if(checkdata_temp == humidity_H_temp + humidity_L_temp + temperature_H_temp + temperature_L_temp)
+ 166   2              {
+ 167   3                  humidity_H = humidity_H_temp;
+ 168   3                  humidity_L = humidity_L_temp;
+ 169   3                  temperature_H = temperature_H_temp;
+ 170   3                  temperature_L = temperature_L_temp;
+ 171   3                  checkdata = checkdata_temp;
+ 172   3              }
+ 173   2          }
+ 174   1      
+ 175   1      }
+ 176          
+ 177          /*******************************蓝牙用**********************************/
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 4   
+
+ 178          
+ 179          /*********************************************************/
+ 180          // 单片机内部EEPROM不使能
+ 181          /*********************************************************/
+ 182          void ISP_Disable()
+ 183          {
+ 184   1        ISP_CONTR = 0;
+ 185   1        ISP_ADDRH = 0;
+ 186   1        ISP_ADDRL = 0;
+ 187   1      }
+ 188          
+ 189          
+ 190          /*********************************************************/
+ 191          // 从单片机内部EEPROM读一个字节，从0x2000地址开始
+ 192          /*********************************************************/
+ 193          unsigned char EEPROM_Read(unsigned int add)
+ 194          {
+ 195   1        ISP_DATA  = 0x00;
+ 196   1        ISP_CONTR = 0x83;
+ 197   1        ISP_CMD   = 0x01;
+ 198   1        ISP_ADDRH = (unsigned char)(add>>8);
+ 199   1        ISP_ADDRL = (unsigned char)(add&0xff);
+ 200   1        // 对STC89C51系列来说，每次要写入0x46，再写入0xB9,ISP/IAP才会生效
+ 201   1        ISP_TRIG  = 0x46;    
+ 202   1        ISP_TRIG  = 0xB9;
+ 203   1        _nop_();
+ 204   1        ISP_Disable();
+ 205   1        return (ISP_DATA);
+ 206   1      }
+ 207          
+ 208          
+ 209          /*********************************************************/
+ 210          // 往单片机内部EEPROM写一个字节，从0x2000地址开始
+ 211          /*********************************************************/
+ 212          void EEPROM_Write(unsigned int add,unsigned char ch)
+ 213          {
+ 214   1        ISP_CONTR = 0x83;
+ 215   1        ISP_CMD   = 0x02;
+ 216   1        ISP_ADDRH = (unsigned char)(add>>8);
+ 217   1        ISP_ADDRL = (unsigned char)(add&0xff);
+ 218   1        ISP_DATA  = ch;
+ 219   1        ISP_TRIG  = 0x46;
+ 220   1        ISP_TRIG  = 0xB9;
+ 221   1        _nop_();
+ 222   1        ISP_Disable();
+ 223   1      }
+ 224          
+ 225          
+ 226          /*********************************************************/
+ 227          // 擦除单片机内部EEPROM的一个扇区
+ 228          // 写8个扇区中随便一个的地址，便擦除该扇区，写入前要先擦除
+ 229          /*********************************************************/
+ 230          void Sector_Erase(unsigned int add)   
+ 231          {
+ 232   1        ISP_CONTR = 0x83;
+ 233   1        ISP_CMD   = 0x03;
+ 234   1        ISP_ADDRH = (unsigned char)(add>>8);
+ 235   1        ISP_ADDRL = (unsigned char)(add&0xff);
+ 236   1        ISP_TRIG  = 0x46;
+ 237   1        ISP_TRIG  = 0xB9;
+ 238   1        _nop_();
+ 239   1        ISP_Disable();
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 5   
+
+ 240   1      }
+ 241          
+ 242          
+ 243          /*********************************************************/
+ 244          // 毫秒级的延时函数，time是要延时的毫秒数
+ 245          /*********************************************************/
+ 246          void DelayMs(uint time)
+ 247          {
+ 248   1        uint i,j;
+ 249   1        for(i=0;i<time;i++)
+ 250   1          for(j=0;j<112;j++);
+ 251   1      }
+ 252          
+ 253          
+ 254          /*********************************************************/
+ 255          // 1602液晶写命令函数，cmd就是要写入的命令
+ 256          /*********************************************************/
+ 257          void LcdWriteCmd(uchar cmd)
+ 258          { 
+ 259   1        LcdRs_P = 0;
+ 260   1        LcdRw_P = 0;
+ 261   1        LcdEn_P = 0;
+ 262   1        P0=cmd;
+ 263   1        DelayMs(2);
+ 264   1        LcdEn_P = 1;    
+ 265   1        DelayMs(2);
+ 266   1        LcdEn_P = 0;  
+ 267   1      }
+ 268          
+ 269          
+ 270          /*********************************************************/
+ 271          // 1602液晶写数据函数，dat就是要写入的数据
+ 272          /*********************************************************/
+ 273          void LcdWriteData(uchar dat)
+ 274          {
+ 275   1        LcdRs_P = 1; 
+ 276   1        LcdRw_P = 0;
+ 277   1        LcdEn_P = 0;
+ 278   1        P0=dat;
+ 279   1        DelayMs(2);
+ 280   1        LcdEn_P = 1;    
+ 281   1        DelayMs(2);
+ 282   1        LcdEn_P = 0;
+ 283   1      }
+ 284          
+ 285          
+ 286          /*********************************************************/
+ 287          // 1602液晶初始化函数
+ 288          /*********************************************************/
+ 289          void LcdInit()
+ 290          {
+ 291   1        LcdWriteCmd(0x38);        // 16*2显示，5*7点阵，8位数据口
+ 292   1        LcdWriteCmd(0x0C);        // 开显示，不显示光标
+ 293   1        LcdWriteCmd(0x06);        // 地址加1，当写入数据后光标右移
+ 294   1        LcdWriteCmd(0x01);        // 清屏
+ 295   1      }
+ 296          
+ 297          
+ 298          /*********************************************************/
+ 299          // 液晶光标定位函数
+ 300          /*********************************************************/
+ 301          void LcdGotoXY(uchar line,uchar column)
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 6   
+
+ 302          {
+ 303   1        // 第一行
+ 304   1        if(line==0)        
+ 305   1          LcdWriteCmd(0x80+column); 
+ 306   1        // 第二行
+ 307   1        if(line==1)        
+ 308   1          LcdWriteCmd(0x80+0x40+column); 
+ 309   1      }
+ 310          
+ 311          
+ 312          /*********************************************************/
+ 313          // 液晶输出字符串函数
+ 314          /*********************************************************/
+ 315          void LcdPrintStr(uchar *str)
+ 316          {
+ 317   1        while(*str!='\0')       // 判断是否到字符串的尽头了
+ 318   1          LcdWriteData(*str++);
+ 319   1      }
+ 320          
+ 321          
+ 322          /*********************************************************/
+ 323          // 液晶输出数字
+ 324          /*********************************************************/
+ 325          void LcdPrintNum(uchar num)
+ 326          {
+ 327   1        LcdWriteData(num/10+48);  // 十位
+ 328   1        LcdWriteData(num%10+48);  // 个位
+ 329   1      }
+ 330          
+ 331          
+ 332          /*********************************************************/
+ 333          // 液晶显示内容的初始化
+ 334          /*********************************************************/
+ 335          void LcdShowInit()
+ 336          {
+ 337   1        LcdGotoXY(0,0);               // 第0行的显示内容
+ 338   1        LcdPrintStr("  DHT11 System  ");
+ 339   1        LcdGotoXY(1,0);               // 第1行的显示内容
+ 340   1        LcdPrintStr("T:   C   H:  %RH");
+ 341   1        LcdGotoXY(1,4);               // 温度单位摄氏度上面的圆圈符号
+ 342   1        LcdWriteData(0xdf); 
+ 343   1      }
+ 344          
+ 345          
+ 346          
+ 347          /*********************************************************/
+ 348          // 10us级延时程序
+ 349          /*********************************************************/
+ 350          void Delay10us()
+ 351          {
+ 352   1        _nop_();  // 执行一条指令，延时1微秒
+ 353   1        _nop_();
+ 354   1        _nop_();
+ 355   1        _nop_();
+ 356   1        _nop_();
+ 357   1        _nop_();
+ 358   1        _nop_();
+ 359   1        _nop_();
+ 360   1        _nop_();
+ 361   1        _nop_();
+ 362   1      }
+ 363          
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 7   
+
+ 364          
+ 365          /*********************************************************/
+ 366          // 读取DHT11单总线上的一个字节
+ 367          /*********************************************************/
+ 368          uchar DhtReadByte(void)
+ 369          {   
+ 370   1        bit bit_i; 
+ 371   1        uchar j;
+ 372   1        uchar dat=0;
+ 373   1      
+ 374   1        for(j=0;j<8;j++)    
+ 375   1        {
+ 376   2          while(!DHT11_P);  // 等待低电平结束 
+ 377   2          Delay10us();      // 延时
+ 378   2          Delay10us();
+ 379   2          Delay10us();
+ 380   2          if(DHT11_P==1)    // 判断数据线是高电平还是低电平
+ 381   2          {
+ 382   3            bit_i=1; 
+ 383   3            while(DHT11_P);
+ 384   3          } 
+ 385   2          else
+ 386   2          {
+ 387   3            bit_i=0;
+ 388   3          }
+ 389   2          dat<<=1;          // 将该位移位保存到dat变量中
+ 390   2          dat|=bit_i;    
+ 391   2        }
+ 392   1        return(dat);  
+ 393   1      }
+ 394          
+ 395          
+ 396          /*********************************************************/
+ 397          // 读取DHT11的一帧数据，湿高、湿低(0)、温高、温低(0)、校验码
+ 398          /*********************************************************/
+ 399          void ReadDhtData()
+ 400          {      
+ 401   1        uchar HumiHig;    // 湿度高检测值
+ 402   1        uchar HumiLow;    // 湿度低检测值 
+ 403   1        uchar TemHig;     // 温度高检测值
+ 404   1        uchar TemLow;     // 温度低检测值
+ 405   1        uchar check;      // 校验字节 
+ 406   1        
+ 407   1        DHT11_P=0;        // 主机拉低
+ 408   1        DelayMs(20);      // 保持20毫秒
+ 409   1        DHT11_P=1;        // DATA总线由上拉电阻拉高
+ 410   1      
+ 411   1        Delay10us();      // 延时等待30us
+ 412   1        Delay10us();
+ 413   1        Delay10us();
+ 414   1      
+ 415   1        while(!DHT11_P);  // 等待DHT的低电平结束
+ 416   1        while(DHT11_P);   // 等待DHT的高电平结束
+ 417   1      
+ 418   1        //进入数据接收状态
+ 419   1        HumiHig = DhtReadByte();  // 湿度高8位
+ 420   1        HumiLow = DhtReadByte();  // 湿度低8为，总为0
+ 421   1        TemHig  = DhtReadByte();  // 温度高8位 
+ 422   1        TemLow  = DhtReadByte();  // 温度低8为，总为0 
+ 423   1        check   = DhtReadByte();  // 8位校验码，其值等于读出的四个字节相加之和的低8位
+ 424   1      
+ 425   1        while(!DHT11_P);
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 8   
+
+ 426   1        DHT11_P=1;                // 拉高总线
+ 427   1      
+ 428   1        if(check==HumiHig + HumiLow + TemHig + TemLow)    // 如果收到的数据无误
+ 429   1        {
+ 430   2          temp=TemHig;      // 将温度的检测结果赋值给全局变量temp
+ 431   2          humi=HumiHig;     // 将湿度的检测结果赋值给全局变量humi
+ 432   2        }
+ 433   1      }
+ 434          
+ 435          
+ 436          /*********************************************************/
+ 437          // 是否需要报警判断
+ 438          /*********************************************************/
+ 439          void AlarmJudge(void)
+ 440          {
+ 441   1        // uchar i;
+ 442   1      
+ 443   1        if(temp>AlarmTH)        // 温度是否过高
+ 444   1        {
+ 445   2          LedTH_P=0;
+ 446   2          LedTL_P=1;
+ 447   2        }
+ 448   1        else if(temp<AlarmTL)   // 温度是否过低
+ 449   1        {
+ 450   2          LedTL_P=0;
+ 451   2          LedTH_P=1;
+ 452   2        }
+ 453   1        else                    // 温度正常
+ 454   1        {
+ 455   2          LedTH_P=1;
+ 456   2          LedTL_P=1;
+ 457   2        }
+ 458   1      
+ 459   1        if(humi>AlarmHH)        // 湿度是否过高
+ 460   1        {
+ 461   2          LedHH_P=0;
+ 462   2          LedHL_P=1;
+ 463   2        }
+ 464   1        else if(humi<AlarmHL)   // 湿度是否过低
+ 465   1        {
+ 466   2          LedHL_P=0;
+ 467   2          LedHH_P=1;
+ 468   2        }
+ 469   1        else                    // 湿度正常
+ 470   1        {
+ 471   2          LedHH_P=1;
+ 472   2          LedHL_P=1;
+ 473   2        }
+ 474   1      }
+ 475          
+ 476          
+ 477          /*********************************************************/
+ 478          // 按键扫描，用于设置温湿度报警范围
+ 479          /*********************************************************/
+ 480          void KeyScanf()
+ 481          {
+ 482   1        if(KeySet_P==0)   // 判断设置按键是否被按下
+ 483   1        {
+ 484   2          /*将液晶显示改为设置页面的*******************************************************/
+ 485   2      
+ 486   2          LcdWriteCmd(0x01);        // 设置界面的显示框架
+ 487   2          LcdGotoXY(0,0);
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 9   
+
+ 488   2          LcdPrintStr("Temp:   -       ");
+ 489   2          LcdGotoXY(1,0);
+ 490   2          LcdPrintStr("Humi:   -       ");
+ 491   2          
+ 492   2          LcdGotoXY(0,6);           // 在液晶上填充温度的上限值 
+ 493   2          LcdPrintNum(AlarmTH); 
+ 494   2          LcdGotoXY(0,9);           // 在液晶上填充温度的下限值
+ 495   2          LcdPrintNum(AlarmTL);
+ 496   2      
+ 497   2          LcdGotoXY(1,6);           // 在液晶上填充湿度的上限值
+ 498   2          LcdPrintNum(AlarmHH); 
+ 499   2          LcdGotoXY(1,9);           // 在液晶上填充湿度的下限值
+ 500   2          LcdPrintNum(AlarmHL);
+ 501   2      
+ 502   2          LcdGotoXY(0,7);           // 光标定位
+ 503   2          LcdWriteCmd(0x0F);        // 光标闪烁
+ 504   2          
+ 505   2          DelayMs(10);              // 去除按键按下的抖动
+ 506   2          while(!KeySet_P);         // 等待按键释放
+ 507   2          DelayMs(10);              // 去除按键松开的抖动
+ 508   2      
+ 509   2          /*设置温度的下限值****************************************************************/
+ 510   2      
+ 511   2          while(KeySet_P)           // “设置键”没有被按下，则一直处于温度上限的设置
+ 512   2          {
+ 513   3            if(KeyDown_P==0)        // 判断 “减按键“ 是否被按下   
+ 514   3            {
+ 515   4              if(AlarmTH>AlarmTL+1)         // 只有当温度上限值大于下限时，才能减1
+ 516   4                AlarmTH--;
+ 517   4              LcdGotoXY(0,6);       // 重新刷新显示更改后的温度上限值 
+ 518   4              LcdPrintNum(AlarmTH);     
+ 519   4              LcdGotoXY(0,7);       // 重新定位闪烁的光标位置
+ 520   4              DelayMs(350);         // 延时
+ 521   4            }
+ 522   3            if(KeyUp_P==0)          // 判断 “加按键“ 是否被按下
+ 523   3            {
+ 524   4              if(AlarmTH<55)        // 只有当温度上限值小于55时，才能加1
+ 525   4                AlarmTH++;
+ 526   4              LcdGotoXY(0,6);       // 重新刷新显示更改后的温度上限值
+ 527   4              LcdPrintNum(AlarmTH);
+ 528   4              LcdGotoXY(0,7);       // 重新定位闪烁的光标位置
+ 529   4              DelayMs(350);         // 延时
+ 530   4            } 
+ 531   3          }
+ 532   2      
+ 533   2          LcdGotoXY(0,10);
+ 534   2          DelayMs(10);              // 去除按键按下的抖动
+ 535   2          while(!KeySet_P);         // 等待按键释放
+ 536   2          DelayMs(10);              // 去除按键松开的抖动
+ 537   2      
+ 538   2          /*设置温度的上限值****************************************************************/
+ 539   2              
+ 540   2          while(KeySet_P)           // “设置键”没有被按下，则一直处于温度下限的设置
+ 541   2          {
+ 542   3            if(KeyDown_P==0)        // 判断 “减按键“ 是否被按下
+ 543   3            {
+ 544   4              if(AlarmTL>0)         // 只有当温度下限值大于0时，才能减1     
+ 545   4                AlarmTL--;
+ 546   4              LcdGotoXY(0,9);       // 重新刷新显示更改后的温度下限值
+ 547   4              LcdPrintNum(AlarmTL);
+ 548   4              LcdGotoXY(0,10);      // 重新定位闪烁的光标位置
+ 549   4              DelayMs(350);         // 延时
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 10  
+
+ 550   4            }
+ 551   3            if(KeyUp_P==0)          // 判断 “加按键“ 是否被按下
+ 552   3            {
+ 553   4              if(AlarmTL<AlarmTH-1)       // 只有当温度下限值小于上限时，才能加1
+ 554   4                AlarmTL++;
+ 555   4              LcdGotoXY(0,9);       // 重新刷新显示更改后的温度下限值   
+ 556   4              LcdPrintNum(AlarmTL);
+ 557   4              LcdGotoXY(0,10);      // 重新定位闪烁的光标位置
+ 558   4              DelayMs(350);         // 延时
+ 559   4            }                
+ 560   3          }
+ 561   2      
+ 562   2          LcdGotoXY(1,7);
+ 563   2          DelayMs(10);              // 去除按键按下的抖动
+ 564   2          while(!KeySet_P);         // 等待按键释放
+ 565   2          DelayMs(10);              // 去除按键松开的抖动
+ 566   2          
+ 567   2          /*设置湿度的下限值****************************************************************/
+ 568   2      
+ 569   2          while(KeySet_P)           // “设置键”没有被按下，则一直处于湿度上限的设置
+ 570   2          {
+ 571   3            if(KeyDown_P==0)        // 判断 “减按键“ 是否被按下
+ 572   3            {
+ 573   4              if(AlarmHH>AlarmHL+1)         // 只有当湿度上限值大于下限时，才能减1
+ 574   4                AlarmHH--;
+ 575   4              LcdGotoXY(1,6);       // 重新刷新显示更改后的湿度上限值   
+ 576   4              LcdPrintNum(AlarmHH);
+ 577   4              LcdGotoXY(1,7);       // 重新定位闪烁的光标位置
+ 578   4              DelayMs(350);
+ 579   4            }
+ 580   3            if(KeyUp_P==0)          // 判断 “加按键“ 是否被按下
+ 581   3            {
+ 582   4              if(AlarmHH<95)        // 只有当湿度上限值小于95时，才能加1
+ 583   4                AlarmHH++;
+ 584   4              LcdGotoXY(1,6);       // 重新刷新显示更改后的湿度下限值
+ 585   4              LcdPrintNum(AlarmHH);
+ 586   4              LcdGotoXY(1,7);       // 重新定位闪烁的光标位置
+ 587   4              DelayMs(350);         // 延时
+ 588   4            } 
+ 589   3          }
+ 590   2      
+ 591   2          LcdGotoXY(1,10);
+ 592   2          DelayMs(10);              // 去除按键按下的抖动
+ 593   2          while(!KeySet_P);         // 等待按键释放
+ 594   2          DelayMs(10);              // 去除按键松开的抖动
+ 595   2          
+ 596   2          /*设置湿度的上限值****************************************************************/
+ 597   2      
+ 598   2          while(KeySet_P)           // “设置键”没有被按下，则一直处于湿度下限的设置
+ 599   2          {
+ 600   3            if(KeyDown_P==0)        // 判断 “减按键“ 是否被按下
+ 601   3            {
+ 602   4              if(AlarmHL>0)         // 只有当湿度下限值大于0时，才能减1
+ 603   4                AlarmHL--;
+ 604   4              LcdGotoXY(1,9);       // 重新刷新显示更改后的湿度下限值
+ 605   4              LcdPrintNum(AlarmHL);
+ 606   4              LcdGotoXY(1,10);      // 重新定位闪烁的光标位置
+ 607   4              DelayMs(350);
+ 608   4            }
+ 609   3            if(KeyUp_P==0)          // 判断 “加按键“ 是否被按下
+ 610   3            {
+ 611   4              if(AlarmHL<AlarmHH-1)       // 只有当湿度下限值小于上限时，才能加1
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 11  
+
+ 612   4                AlarmHL++;
+ 613   4              LcdGotoXY(1,9);       // 重新刷新显示更改后的湿度下限值 
+ 614   4              LcdPrintNum(AlarmHL);
+ 615   4              LcdGotoXY(1,10);      // 重新定位闪烁的光标位置
+ 616   4              DelayMs(350);         // 延时
+ 617   4            } 
+ 618   3          }
+ 619   2      
+ 620   2          LcdWriteCmd(0x0C);        // 取消光标闪烁
+ 621   2          LcdShowInit();            // 液晶显示为检测界面的
+ 622   2      
+ 623   2          DelayMs(10);              // 去除按键按下的抖动
+ 624   2          while(!KeySet_P);         // 等待按键释放
+ 625   2          DelayMs(10);              // 去除按键松开的抖动
+ 626   2      
+ 627   2          Sector_Erase(0x2000);           // 存储之前必须先擦除
+ 628   2          EEPROM_Write(0x2000,AlarmTH);   // 把温度上限存入到EEPROM的0x2000这个地址
+ 629   2          EEPROM_Write(0x2001,AlarmTL);   // 把温度下限存入到EEPROM的0x2001这个地址
+ 630   2          EEPROM_Write(0x2002,AlarmHH);   // 把湿度上限存入到EEPROM的0x2002这个地址
+ 631   2          EEPROM_Write(0x2003,AlarmHL);   // 把湿度下限存入到EEPROM的0x2003这个地址
+ 632   2        } 
+ 633   1      }
+ 634          
+ 635          
+ 636          /*********************************************************/
+ 637          // 主函数
+ 638          /*********************************************************/
+ 639          void main()
+ 640          {
+ 641   1        uchar i;
+ 642   1          U8  temp_i;
+ 643   1      
+ 644   1        LcdInit();              // 液晶功能的初始化     
+ 645   1        LcdShowInit();          // 液晶显示的初始化
+ 646   1      
+ 647   1        AlarmTH=EEPROM_Read(0x2000);  // 从EEPROM的0x2000这个地址读取温度的报警上限
+ 648   1        AlarmTL=EEPROM_Read(0x2001);  // 从EEPROM的0x2001这个地址读取温度的报警下限
+ 649   1        AlarmHH=EEPROM_Read(0x2002);  // 从EEPROM的0x2002这个地址读取湿度的报警上限 
+ 650   1        AlarmHL=EEPROM_Read(0x2003);  // 从EEPROM的0x2003这个地址读取湿度的报警下限
+ 651   1      
+ 652   1        if((AlarmTL==0)||(AlarmTL>AlarmTH+1)) // 如果温度下限报警值读出来异常（等于0或大于100），则重新赋值
+ 653   1          AlarmTL=20;
+ 654   1        if((AlarmTH==0)||(AlarmTH>55))  // 如果温度上限报警值读出来异常（等于0或大于100），则重新赋值
+ 655   1          AlarmTH=35;
+ 656   1        if((AlarmHL==0)||(AlarmHL>AlarmHH+1)) // 如果温度下限报警值读出来异常（等于0或大于100），则重新赋值
+ 657   1          AlarmHL=40;
+ 658   1        if((AlarmHH==0)||(AlarmHH>95))  // 如果温度上限报警值读出来异常（等于0或大于100），则重新赋值
+ 659   1          AlarmHH=85;
+ 660   1          
+ 661   1        DelayMs(1200);          // 上电后等一下再开始读取
+ 662   1      /*******************************蓝牙用**********************************/
+ 663   1      
+ 664   1          TMOD = 0x20;          //定时器T1使用工作方式2
+ 665   1          TH1 = 253;        // 设置初值
+ 666   1          TL1 = 253;
+ 667   1          TR1 = 1;          // 开始计时
+ 668   1          SCON = 0x50;          //工作方式1，波特率9600bps，允许接收
+ 669   1          ES = 1;
+ 670   1          EA = 1;           // 打开所以中断
+ 671   1          TI = 0;
+ 672   1          RI = 0;
+ 673   1          Ble_Delay(1);         //延时100US（12M晶振)
+C51 COMPILER V9.60.0.0   MAIN                                                              06/22/2022 09:11:01 PAGE 12  
+
+ 674   1      /*******************************蓝牙用**********************************/
+ 675   1        
+ 676   1        while(1)
+ 677   1        {
+ 678   2          ReadDhtData();        // 检测温湿度数据
+ 679   2      
+ 680   2          LcdGotoXY(1,2);       // 定位到要显示温度的地方
+ 681   2          LcdPrintNum(temp);    // 显示温度值
+ 682   2          LcdGotoXY(1,11);      // 定位到要显示湿度的地方
+ 683   2          LcdPrintNum(humi);    // 显示湿度值
+ 684   2          
+ 685   2          AlarmJudge();         // 判断并根据需要报警
+ 686   2      
+ 687   2          for(i=0;i<110;i++)
+ 688   2          {
+ 689   3            KeyScanf();         // 按键扫描
+ 690   3            DelayMs(20);        // 延时 
+ 691   3          }
+ 692   2      
+ 693   2      /*******************************蓝牙用**********************************/
+ 694   2              //调用温湿度读取子程序
+ 695   2              readData();
+ 696   2              str[0]=humidity_H;
+ 697   2              str[1]=humidity_L;
+ 698   2              str[2]=temperature_H;
+ 699   2              str[3]=temperature_L;
+ 700   2              str[4]=checkdata;
+ 701   2              //发送到串口
+ 702   2              for(temp_i=0; temp_i<5; temp_i++)
+ 703   2              {
+ 704   3                  sendOneChar(str[temp_i]);
+ 705   3              }
+ 706   2              //读取模块数据周期不易小于 2S
+ 707   2              Ble_delayms(2000);
+ 708   2      /*******************************蓝牙用**********************************/
+ 709   2        }
+ 710   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1629    ----
+   CONSTANT SIZE    =     68    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     17      10
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
